@@ -307,6 +307,7 @@
     </div>
 
     <script type="module">
+      // Firebase imports (using Firebase v11.6.1 CDN)
       import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
       import {
         getAuth,
@@ -328,9 +329,19 @@
         Timestamp,
       } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+      // Your Firebase configuration object
+      const firebaseConfig = {
+        apiKey: "AIzaSyDaGQEiUC8cwp0hOVRRI658fOi2ArhiT1g",
+        authDomain: "inventory-management-app-78fd2.firebaseapp.com",
+        projectId: "inventory-management-app-78fd2",
+        storageBucket: "inventory-management-app-78fd2.appspot.com", // Fixed URL
+        messagingSenderId: "253664290568",
+        appId: "1:253664290568:web:0c0731f3ce71ea9c1ceebd",
+        measurementId: "G-Q587BY9WGM",
+      };
+
       // --- Firebase Globals ---
-      const appId =
-        typeof __app_id !== "undefined" ? __app_id : "default-inventory-app";
+      const appId = "default-inventory-app"; // or set dynamically if needed
       let db, auth;
       let userId;
       let inventoryCollection;
@@ -340,34 +351,13 @@
 
       // --- Authentication & Setup ---
       async function setupAppForUser() {
-        // --- Firebase Configuration ---
-        let firebaseConfig;
         try {
-          firebaseConfig =
-            typeof __firebase_config !== "undefined"
-              ? JSON.parse(__firebase_config)
-              : null;
-        } catch (e) {
-          console.error("Failed to parse firebase config:", e);
-          document.getElementById(
-            "app"
-          ).innerHTML = `<div class="text-center p-8 bg-red-100 text-red-700 rounded-lg">Error: Firebase configuration is invalid. The application cannot start.</div>`;
-          return; // This is now a valid return
-        }
+          // Initialize Firebase app
+          const app = initializeApp(firebaseConfig);
+          db = getFirestore(app);
+          auth = getAuth(app);
 
-        if (!firebaseConfig) {
-          console.error("Firebase config is not available.");
-          document.getElementById(
-            "app"
-          ).innerHTML = `<div class="text-center p-8 bg-red-100 text-red-700 rounded-lg">Error: Firebase configuration is missing. The application cannot start.</div>`;
-          return; // This is now a valid return
-        }
-
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
-
-        try {
+          // Sign in user (custom token or anonymous)
           if (
             typeof __initial_auth_token !== "undefined" &&
             __initial_auth_token
@@ -383,16 +373,19 @@
             return;
           }
 
-          // Define collection paths after getting userId
+          // Define Firestore collections based on user ID
           const basePath = `/artifacts/${appId}/users/${userId}`;
           inventoryCollection = collection(db, `${basePath}/inventory`);
           salesCollection = collection(db, `${basePath}/sales`);
 
-          // Start listening to data changes
+          // Start listening for real-time updates
           listenForInventoryUpdates();
           listenForSalesUpdates();
         } catch (error) {
           console.error("Authentication or app setup error:", error);
+          document.getElementById(
+            "app"
+          ).innerHTML = `<div class="text-center p-8 bg-red-100 text-red-700 rounded-lg">Error: ${error.message}</div>`;
         }
       }
 
@@ -566,15 +559,14 @@
 
             closeSellModalHandler();
           } else {
-            // In a real app, show a nicer message instead of alert
-            console.warn("Not enough items in stock to sell.");
+            // Show warning if stock is insufficient
+            alert("Not enough items in stock to sell.");
           }
         }
       });
 
       // Handle item deletion
       async function deleteItem(id) {
-        // In a real app, use a custom confirmation modal
         if (window.confirm("Are you sure you want to delete this item?")) {
           try {
             await deleteDoc(doc(db, inventoryCollection.path, id));
@@ -588,7 +580,7 @@
 
       function renderInventory(inventory) {
         const inventoryList = document.getElementById("inventoryList");
-        inventoryList.innerHTML = ""; // Clear current list
+        inventoryList.innerHTML = "";
 
         if (inventory.length === 0) {
           inventoryList.innerHTML = `<div class="text-center p-8 text-gray-500">No items in inventory. Click "Add New Item" to get started.</div>`;
@@ -714,16 +706,17 @@
         const outOfStockCount = inventory.filter(
           (item) => item.quantity === 0
         ).length;
-        const categories = new Set(inventory.map((item) => item.category));
 
-        document.getElementById("totalItems").textContent = totalItemsCount;
-        document.getElementById("outOfStock").textContent = outOfStockCount;
-        document.getElementById("totalCategories").textContent =
-          categories.size;
+        document.getElementById("totalItemsCount").textContent =
+          totalItemsCount;
+        document.getElementById("outOfStockCount").textContent =
+          outOfStockCount;
       }
 
-      // --- Initialize App ---
-      document.addEventListener("DOMContentLoaded", setupAppForUser);
+      // --- Initialize app after DOM loaded ---
+      window.addEventListener("DOMContentLoaded", () => {
+        setupAppForUser();
+      });
     </script>
   </body>
 </html>
