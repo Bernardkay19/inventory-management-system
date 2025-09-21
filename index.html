@@ -6,10 +6,9 @@
     <title>Inventory Management System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display.swap"
       rel="stylesheet"
     />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       body {
         font-family: "Inter", sans-serif;
@@ -105,7 +104,7 @@
           <!-- Summary Cards -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <div class="bg-white p-6 rounded-lg shadow">
-              <h3 class="text-gray-500 font-semibold">Total Items</h3>
+              <h3 class="text-gray-500 font-semibold">Total Stock</h3>
               <p id="totalItems" class="text-3xl font-bold">0</p>
             </div>
             <div class="bg-white p-6 rounded-lg shadow">
@@ -294,6 +293,10 @@
               min="1"
             />
           </div>
+          <div
+            id="sellErrorMessage"
+            class="text-red-500 text-sm mb-4 hidden"
+          ></div>
           <div class="flex justify-end">
             <button
               type="submit"
@@ -306,426 +309,331 @@
       </div>
     </div>
 
-    <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-      import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-      import {
-        getAuth,
-        signInAnonymously,
-        signInWithCustomToken,
-      } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-      import {
-        getFirestore,
-        collection,
-        onSnapshot,
-        doc,
-        addDoc,
-        setDoc,
-        getDoc,
-        deleteDoc,
-        serverTimestamp,
-        query,
-        where,
-        Timestamp,
-      } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        // --- Local Data Store ---
+        let inventory = [
+          {
+            id: "1",
+            name: "Laptop",
+            category: "Electronics",
+            quantity: 15,
+            price: 1200.5,
+          },
+          {
+            id: "2",
+            name: "Keyboard",
+            category: "Electronics",
+            quantity: 30,
+            price: 75.0,
+          },
+          {
+            id: "3",
+            name: "Office Chair",
+            category: "Furniture",
+            quantity: 25,
+            price: 150.0,
+          },
+          {
+            id: "4",
+            name: "Desk Lamp",
+            category: "Furniture",
+            quantity: 50,
+            price: 25.99,
+          },
+          {
+            id: "5",
+            name: "Notebook",
+            category: "Stationery",
+            quantity: 0,
+            price: 3.5,
+          },
+        ];
+        let sales = [];
 
-      // --- Firebase Globals ---
-      const appId =
-        typeof __app_id !== "undefined" ? __app_id : "default-inventory-app";
-      let db, auth;
-      let userId;
-      let inventoryCollection;
-      let salesCollection;
-      let unsubscribeInventory = () => {};
-      let unsubscribeSales = () => {};
+        // --- UI Elements ---
+        const addItemBtn = document.getElementById("addItemBtn");
+        const itemModal = document.getElementById("itemModal");
+        const closeModalBtn = document.getElementById("closeModal");
+        const itemForm = document.getElementById("itemForm");
+        const sellModal = document.getElementById("sellModal");
+        const closeSellModalBtn = document.getElementById("closeSellModal");
+        const sellForm = document.getElementById("sellForm");
+        const sellErrorMessage = document.getElementById("sellErrorMessage");
+        const inventoryTab = document.getElementById("inventoryTab");
+        const salesTab = document.getElementById("salesTab");
+        const inventoryView = document.getElementById("inventoryView");
+        const salesView = document.getElementById("salesView");
+        const inventoryList = document.getElementById("inventoryList");
+        const salesReportList = document.getElementById("salesReportList");
 
-      // --- Authentication & Setup ---
-      async function setupAppForUser() {
-        // --- Firebase Configuration ---
-        // Replace with your own Firebase configuration
-        const firebaseConfig = {
-          apiKey: "AIzaSyDaGQEiUC8cwp0hOVRRI658fOi2ArhiT1g",
-          authDomain: "inventory-management-app-78fd2.firebaseapp.com",
-          projectId: "inventory-management-app-78fd2",
-          storageBucket: "inventory-management-app-78fd2.appspot.com",
-          messagingSenderId: "253664290568",
-          appId: "1:253664290568:web:0c0731f3ce71ea9c1ceebd",
-          measurementId: "G-Q587BY9WGM",
+        // --- Main App Logic ---
+        function refreshUI() {
+          renderInventory();
+          renderSalesReport();
+          updateSummary();
+        }
+
+        // --- Modal Logic ---
+        function openModal() {
+          itemForm.reset();
+          document.getElementById("itemId").value = "";
+          document.getElementById("modalTitle").textContent = "Add New Item";
+          itemModal.classList.add("show");
+        }
+
+        function closeModalHandler() {
+          itemModal.classList.remove("show");
+        }
+
+        function openSellModal(item) {
+          sellForm.reset();
+          sellErrorMessage.classList.add("hidden");
+          document.getElementById("sellItemId").value = item.id;
+          document.getElementById("sellItemName").textContent = item.name;
+          document.getElementById("sellItemStock").textContent = item.quantity;
+          document.getElementById("sellQuantity").max = item.quantity;
+          document.getElementById("sellQuantity").value = 1;
+          sellModal.classList.add("show");
+        }
+
+        function closeSellModalHandler() {
+          sellModal.classList.remove("show");
+        }
+
+        addItemBtn.onclick = openModal;
+        closeModalBtn.onclick = closeModalHandler;
+        closeSellModalBtn.onclick = closeSellModalHandler;
+
+        window.onclick = function (event) {
+          if (event.target == itemModal) closeModalHandler();
+          if (event.target == sellModal) closeSellModalHandler();
         };
 
-        const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
-        // ... the rest of the script continues
+        // --- Tab Switching Logic ---
+        inventoryTab.addEventListener("click", () => {
+          inventoryView.classList.remove("hidden");
+          salesView.classList.add("hidden");
+          inventoryTab.classList.add("active");
+          salesTab.classList.remove("active");
+        });
 
-        if (!firebaseConfig) {
-          console.error("Firebase config is not available.");
-          document.getElementById(
-            "app"
-          ).innerHTML = `<div class="text-center p-8 bg-red-100 text-red-700 rounded-lg">Error: Firebase configuration is missing. The application cannot start.</div>`;
-          return; // This is now a valid return
-        }
+        salesTab.addEventListener("click", () => {
+          inventoryView.classList.add("hidden");
+          salesView.classList.remove("hidden");
+          inventoryTab.classList.remove("active");
+          salesTab.classList.add("active");
+        });
 
-        // const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
+        // --- Data Logic ---
+        itemForm.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const id = document.getElementById("itemId").value;
+          const newItem = {
+            id: id || crypto.randomUUID(),
+            name: document.getElementById("itemName").value,
+            category: document.getElementById("itemCategory").value,
+            quantity: parseInt(document.getElementById("itemQuantity").value),
+            price: parseFloat(document.getElementById("itemPrice").value),
+          };
 
-        try {
-          if (
-            typeof __initial_auth_token !== "undefined" &&
-            __initial_auth_token
-          ) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-          } else {
-            await signInAnonymously(auth);
-          }
-
-          userId = auth.currentUser.uid;
-          if (!userId) {
-            console.error("Authentication failed, user ID is null.");
-            return;
-          }
-
-          // Define collection paths after getting userId
-          const basePath = `/artifacts/${appId}/users/${userId}`;
-          inventoryCollection = collection(db, `${basePath}/inventory`);
-          salesCollection = collection(db, `${basePath}/sales`);
-
-          // Start listening to data changes
-          listenForInventoryUpdates();
-          listenForSalesUpdates();
-        } catch (error) {
-          console.error("Authentication or app setup error:", error);
-        }
-      }
-
-      // --- UI Elements ---
-      const addItemBtn = document.getElementById("addItemBtn");
-      const itemModal = document.getElementById("itemModal");
-      const closeModal = document.getElementById("closeModal");
-      const itemForm = document.getElementById("itemForm");
-      const sellModal = document.getElementById("sellModal");
-      const closeSellModal = document.getElementById("closeSellModal");
-      const sellForm = document.getElementById("sellForm");
-
-      const inventoryTab = document.getElementById("inventoryTab");
-      const salesTab = document.getElementById("salesTab");
-      const inventoryView = document.getElementById("inventoryView");
-      const salesView = document.getElementById("salesView");
-
-      // --- Modal Logic ---
-      function openModal() {
-        itemForm.reset();
-        document.getElementById("itemId").value = "";
-        document.getElementById("modalTitle").textContent = "Add New Item";
-        itemModal.classList.add("show");
-      }
-
-      function closeModalHandler() {
-        itemModal.classList.remove("show");
-      }
-
-      function openSellModal(item) {
-        document.getElementById("sellItemId").value = item.id;
-        document.getElementById("sellItemName").textContent = item.name;
-        document.getElementById("sellItemStock").textContent = item.quantity;
-        document.getElementById("sellQuantity").max = item.quantity;
-        document.getElementById("sellQuantity").value = 1;
-        sellModal.classList.add("show");
-      }
-
-      function closeSellModalHandler() {
-        sellModal.classList.remove("show");
-      }
-
-      addItemBtn.onclick = openModal;
-      closeModal.onclick = closeModalHandler;
-      closeSellModal.onclick = closeSellModalHandler;
-
-      window.onclick = function (event) {
-        if (event.target == itemModal) {
-          closeModalHandler();
-        }
-        if (event.target == sellModal) {
-          closeSellModalHandler();
-        }
-      };
-
-      // --- Tab Switching Logic ---
-      inventoryTab.addEventListener("click", () => {
-        inventoryView.classList.remove("hidden");
-        salesView.classList.add("hidden");
-        inventoryTab.classList.add("active");
-        salesTab.classList.remove("active");
-      });
-
-      salesTab.addEventListener("click", () => {
-        inventoryView.classList.add("hidden");
-        salesView.classList.remove("hidden");
-        inventoryTab.classList.remove("active");
-        salesTab.classList.add("active");
-      });
-
-      // --- Firestore Data Logic ---
-
-      // Listen for inventory updates
-      function listenForInventoryUpdates() {
-        unsubscribeInventory(); // Unsubscribe from any previous listener
-        unsubscribeInventory = onSnapshot(
-          inventoryCollection,
-          (snapshot) => {
-            const inventory = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            }));
-            renderInventory(inventory);
-            updateSummary(inventory);
-          },
-          (error) => {
-            console.error("Error listening to inventory collection:", error);
-          }
-        );
-      }
-
-      // Listen for today's sales updates
-      function listenForSalesUpdates() {
-        unsubscribeSales(); // Unsubscribe from any previous listener
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const startOfToday = Timestamp.fromDate(today);
-
-        const salesQuery = query(
-          salesCollection,
-          where("timestamp", ">=", startOfToday)
-        );
-
-        unsubscribeSales = onSnapshot(
-          salesQuery,
-          (snapshot) => {
-            const sales = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            }));
-            renderSalesReport(sales);
-          },
-          (error) => {
-            console.error("Error listening to sales collection:", error);
-          }
-        );
-      }
-
-      // Handle item form submission (Add/Update)
-      itemForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const id = document.getElementById("itemId").value;
-        const itemData = {
-          name: document.getElementById("itemName").value,
-          category: document.getElementById("itemCategory").value,
-          quantity: parseInt(document.getElementById("itemQuantity").value),
-          price: parseFloat(document.getElementById("itemPrice").value),
-        };
-
-        try {
           if (id) {
-            // Update existing item
-            const itemRef = doc(db, inventoryCollection.path, id);
-            await setDoc(itemRef, itemData, { merge: true });
+            inventory = inventory.map((item) =>
+              item.id === id ? newItem : item
+            );
           } else {
-            // Add new item
-            await addDoc(inventoryCollection, itemData);
+            inventory.push(newItem);
           }
+
           closeModalHandler();
-        } catch (error) {
-          console.error("Error saving item: ", error);
-        }
-      });
+          refreshUI();
+        });
 
-      // Handle Sell Form Submission
-      sellForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const id = document.getElementById("sellItemId").value;
-        const quantityToSell = parseInt(
-          document.getElementById("sellQuantity").value
-        );
+        sellForm.addEventListener("submit", (e) => {
+          e.preventDefault();
+          sellErrorMessage.classList.add("hidden");
+          const id = document.getElementById("sellItemId").value;
+          const quantityToSell = parseInt(
+            document.getElementById("sellQuantity").value
+          );
 
-        const itemRef = doc(db, inventoryCollection.path, id);
-        const itemSnapshot = await getDoc(itemRef);
+          const item = inventory.find((i) => i.id === id);
 
-        if (itemSnapshot.exists()) {
-          const item = itemSnapshot.data();
-          if (item.quantity >= quantityToSell) {
-            const newQuantity = item.quantity - quantityToSell;
-            await setDoc(itemRef, { quantity: newQuantity }, { merge: true });
+          if (item && item.quantity >= quantityToSell) {
+            item.quantity -= quantityToSell;
 
-            // Add to sales report
-            await addDoc(salesCollection, {
+            sales.push({
+              id: crypto.randomUUID(),
               itemId: id,
               itemName: item.name,
               quantity: quantityToSell,
               price: item.price,
               total: item.price * quantityToSell,
-              timestamp: serverTimestamp(),
+              timestamp: new Date(),
             });
 
             closeSellModalHandler();
+            refreshUI();
           } else {
-            // In a real app, show a nicer message instead of alert
-            console.warn("Not enough items in stock to sell.");
+            sellErrorMessage.textContent = `Error: Only ${item.quantity} items are in stock.`;
+            sellErrorMessage.classList.remove("hidden");
+          }
+        });
+
+        function deleteItem(id) {
+          if (window.confirm("Are you sure you want to delete this item?")) {
+            inventory = inventory.filter((item) => item.id !== id);
+            refreshUI();
           }
         }
+
+        // --- Rendering Functions ---
+        function renderInventory() {
+          inventoryList.innerHTML = "";
+          if (inventory.length === 0) {
+            inventoryList.innerHTML = `<div class="text-center p-8 text-gray-500">No items in inventory. Click "Add New Item" to get started.</div>`;
+            return;
+          }
+
+          const groupedByCategory = inventory.reduce((acc, item) => {
+            const category = item.category || "Uncategorized";
+            if (!acc[category]) acc[category] = [];
+            acc[category].push(item);
+            return acc;
+          }, {});
+
+          Object.keys(groupedByCategory)
+            .sort()
+            .forEach((category) => {
+              const categoryContainer = document.createElement("div");
+              categoryContainer.className = "p-4 border-b";
+
+              const categoryHeader = document.createElement("h3");
+              categoryHeader.className =
+                "text-lg font-semibold mb-2 text-gray-700";
+              categoryHeader.textContent = category;
+              categoryContainer.appendChild(categoryHeader);
+
+              const table = document.createElement("table");
+              table.className = "min-w-full";
+              table.innerHTML = `
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white"></tbody>
+                    `;
+
+              const tbody = table.querySelector("tbody");
+              groupedByCategory[category].forEach((item) => {
+                const row = document.createElement("tr");
+                const stockColor =
+                  item.quantity === 0
+                    ? "text-red-500 font-bold"
+                    : item.quantity < 10
+                    ? "text-yellow-500 font-bold"
+                    : "";
+                row.innerHTML = `
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${
+                              item.name
+                            }</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm ${stockColor}">${
+                  item.quantity
+                }</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">$${item.price.toFixed(
+                              2
+                            )}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                <button class="sell-btn bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-xs" ${
+                                  item.quantity === 0 ? "disabled" : ""
+                                } style="${
+                  item.quantity === 0
+                    ? "opacity: 0.5; cursor: not-allowed;"
+                    : ""
+                }">Sell</button>
+                                <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs ml-2">Delete</button>
+                            </td>
+                        `;
+                if (item.quantity > 0) {
+                  row.querySelector(".sell-btn").onclick = () =>
+                    openSellModal(item);
+                }
+                row.querySelector(".delete-btn").onclick = () =>
+                  deleteItem(item.id);
+                tbody.appendChild(row);
+              });
+              categoryContainer.appendChild(table);
+              inventoryList.appendChild(categoryContainer);
+            });
+        }
+
+        function renderSalesReport() {
+          salesReportList.innerHTML = "";
+
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const todaysSales = sales.filter((sale) => sale.timestamp >= today);
+          todaysSales.sort((a, b) => b.timestamp - a.timestamp);
+
+          if (todaysSales.length === 0) {
+            salesReportList.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-gray-500">No sales recorded today.</td></tr>`;
+          } else {
+            todaysSales.forEach((sale) => {
+              const row = document.createElement("tr");
+              row.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${
+                              sale.itemName
+                            }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${
+                              sale.quantity
+                            }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$${sale.price.toFixed(
+                              2
+                            )}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$${sale.total.toFixed(
+                              2
+                            )}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${sale.timestamp.toLocaleTimeString()}</td>
+                        `;
+              salesReportList.appendChild(row);
+            });
+          }
+
+          const totalSalesValue = todaysSales.reduce(
+            (sum, sale) => sum + sale.total,
+            0
+          );
+          document.getElementById(
+            "totalSalesValue"
+          ).textContent = `$${totalSalesValue.toFixed(2)}`;
+          document.getElementById("totalTransactions").textContent =
+            todaysSales.length;
+        }
+
+        function updateSummary() {
+          const totalItemsCount = inventory.reduce(
+            (sum, item) => sum + item.quantity,
+            0
+          );
+          const outOfStockCount = inventory.filter(
+            (item) => item.quantity === 0
+          ).length;
+          const categories = new Set(inventory.map((item) => item.category));
+
+          document.getElementById("totalItems").textContent = totalItemsCount;
+          document.getElementById("outOfStock").textContent = outOfStockCount;
+          document.getElementById("totalCategories").textContent =
+            categories.size;
+        }
+
+        // --- Initialize App ---
+        refreshUI();
       });
-
-      // Handle item deletion
-      async function deleteItem(id) {
-        // In a real app, use a custom confirmation modal
-        if (window.confirm("Are you sure you want to delete this item?")) {
-          try {
-            await deleteDoc(doc(db, inventoryCollection.path, id));
-          } catch (error) {
-            console.error("Error deleting item:", error);
-          }
-        }
-      }
-
-      // --- Rendering Functions ---
-
-      function renderInventory(inventory) {
-        const inventoryList = document.getElementById("inventoryList");
-        inventoryList.innerHTML = ""; // Clear current list
-
-        if (inventory.length === 0) {
-          inventoryList.innerHTML = `<div class="text-center p-8 text-gray-500">No items in inventory. Click "Add New Item" to get started.</div>`;
-          return;
-        }
-
-        const groupedByCategory = inventory.reduce((acc, item) => {
-          const category = item.category || "Uncategorized";
-          if (!acc[category]) {
-            acc[category] = [];
-          }
-          acc[category].push(item);
-          return acc;
-        }, {});
-
-        for (const category in groupedByCategory) {
-          const categoryContainer = document.createElement("div");
-          categoryContainer.className = "p-4 border-b";
-
-          const categoryHeader = document.createElement("h3");
-          categoryHeader.className = "text-lg font-semibold mb-2 text-gray-700";
-          categoryHeader.textContent = category;
-          categoryContainer.appendChild(categoryHeader);
-
-          const tableContainer = document.createElement("div");
-          tableContainer.className = "overflow-x-auto";
-          const table = document.createElement("table");
-          table.className = "min-w-full";
-          table.innerHTML = `
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white">
-                    </tbody>
-                `;
-
-          const tbody = table.querySelector("tbody");
-          groupedByCategory[category].forEach((item) => {
-            const row = document.createElement("tr");
-            const stockColor =
-              item.quantity === 0
-                ? "text-red-500 font-bold"
-                : item.quantity < 10
-                ? "text-yellow-500 font-bold"
-                : "";
-            row.innerHTML = `
-                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${
-                          item.name
-                        }</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm ${stockColor}">${
-              item.quantity
-            }</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm">$${item.price.toFixed(
-                          2
-                        )}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                            <button class="sell-btn bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-xs">Sell</button>
-                            <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs ml-2">Delete</button>
-                        </td>
-                    `;
-            row.querySelector(".sell-btn").onclick = () => openSellModal(item);
-            row.querySelector(".delete-btn").onclick = () =>
-              deleteItem(item.id);
-            tbody.appendChild(row);
-          });
-          tableContainer.appendChild(table);
-          categoryContainer.appendChild(tableContainer);
-          inventoryList.appendChild(categoryContainer);
-        }
-      }
-
-      function renderSalesReport(sales) {
-        const salesReportList = document.getElementById("salesReportList");
-        salesReportList.innerHTML = "";
-
-        let totalSales = 0;
-        sales.sort((a, b) => b.timestamp - a.timestamp); // Sort by most recent
-
-        if (sales.length === 0) {
-          salesReportList.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-gray-500">No sales recorded today.</td></tr>`;
-        } else {
-          sales.forEach((sale) => {
-            const row = document.createElement("tr");
-            const saleTime = sale.timestamp
-              ? sale.timestamp.toDate().toLocaleTimeString()
-              : "N/A";
-            row.innerHTML = `
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${
-                          sale.itemName
-                        }</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${
-                          sale.quantity
-                        }</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$${sale.price.toFixed(
-                          2
-                        )}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$${sale.total.toFixed(
-                          2
-                        )}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${saleTime}</td>
-                    `;
-            salesReportList.appendChild(row);
-            totalSales += sale.total;
-          });
-        }
-
-        document.getElementById(
-          "totalSalesValue"
-        ).textContent = `$${totalSales.toFixed(2)}`;
-        document.getElementById("totalTransactions").textContent = sales.length;
-      }
-
-      function updateSummary(inventory) {
-        const totalItemsCount = inventory.reduce(
-          (sum, item) => sum + item.quantity,
-          0
-        );
-        const outOfStockCount = inventory.filter(
-          (item) => item.quantity === 0
-        ).length;
-        const categories = new Set(inventory.map((item) => item.category));
-
-        document.getElementById("totalItems").textContent = totalItemsCount;
-        document.getElementById("outOfStock").textContent = outOfStockCount;
-        document.getElementById("totalCategories").textContent =
-          categories.size;
-      }
-
-      // --- Initialize App ---
-      document.addEventListener("DOMContentLoaded", setupAppForUser);
     </script>
   </body>
 </html>
